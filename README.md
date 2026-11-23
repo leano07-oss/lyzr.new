@@ -26,7 +26,7 @@ Add or edit an HTML file in GitHub and commit it to **main**. Its address is `ht
 
 Refresh the page after GitHub finishes saving the commit. Page changes, newly added pages, deleted pages, CSS, JavaScript, images, fonts, and other supported static assets are read from GitHub on each request. No chat request, workflow, manual deployment, or running Alpha session is needed for these content updates. Changes in a branch other than `main` appear after merging it into `main`.
 
-The server fetches the public raw file with a fresh cache key and sends `Cache-Control: no-store`, including for missing pages, so a previous visit does not cache an old page or a 404. Relative asset paths continue to work. `/` maps to `index.html`; a path ending in `/` maps to that folder's `index.html`. Filenames and folder names are case-sensitive.
+On every request, the server resolves the latest `main` commit through GitHub's public Git protocol, then fetches the file at that exact commit SHA. A new commit gives each file a new upstream URL, avoiding GitHub's cached branch content and cached 404s. Responses send `Cache-Control: no-store`, including for missing pages, so refreshes check the latest commit. Relative asset paths continue to work. `/` maps to `index.html`; a path ending in `/` maps to that folder's `index.html`. Filenames and folder names are case-sensitive.
 
 This is live file serving from GitHub, rather than a new deployment for every commit. The repository must remain public and GitHub must be reachable. Code that needs compilation, private repositories, and backend handlers are outside this static publishing setup. Changes to `server.mjs` or `package.json` still require an Alpha redeployment.
 

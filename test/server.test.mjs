@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { Writable } from 'node:stream';
 import test from 'node:test';
-import { createRequestHandler, resolveFilePath } from '../server.mjs';
+import { createRequestHandler as createHandler, parseBranchCommit, resolveBranchCommit, resolveFilePath } from '../server.mjs';
+
+const defaultCommit = 'a'.repeat(40);
+const createRequestHandler = options => createHandler({ getCommit: async () => defaultCommit, ...options });
 
 async function request(handler, url, method = 'GET', headers = {}) {
   const chunks = [];
@@ -30,20 +33,23 @@ test('root, folders, query strings, and exact filenames map to GitHub files', ()
 test('new pages, edits, and deletions are visible without restarting', async () => {
   const pages = new Map();
   const urls = [];
-  const handler = createRequestHandler({ logger: quiet, fetchFile: async url => {
+  let commit = defaultCommit;
+  const handler = createRequestHandler({ logger: quiet, getCommit: async () => commit, fetchFile: async url => {
     urls.push(new URL(url));
     const body = pages.get(new URL(url).pathname);
     return new Response(body || 'Not found', { status: body ? 200 : 404 });
   } });
-  const path = '/leano07-oss/lyzr.new/refs/heads/main/new-page.html';
+  const path = () => `/leano07-oss/lyzr.new/${commit}/new-page.html`;
   assert.equal((await request(handler, '/new-page.html')).status, 404);
-  pages.set(path, '<h1>New page</h1>');
+  commit = 'b'.repeat(40);
+  pages.set(path(), '<h1>New page</h1>');
   assert.equal((await request(handler, '/new-page.html')).body.toString(), '<h1>New page</h1>');
-  pages.set(path, '<h1>Edited page</h1>');
+  commit = 'c'.repeat(40);
+  pages.set(path(), '<h1>Edited page</h1>');
   assert.equal((await request(handler, '/new-page.html')).body.toString(), '<h1>Edited page</h1>');
-  pages.delete(path);
+  commit = 'd'.repeat(40);
   assert.equal((await request(handler, '/new-page.html')).status, 404);
-  assert.equal(new Set(urls.map(url => url.searchParams.get('refresh'))).size, 4);
+  assert.equal(new Set(urls.map(url => url.pathname)).size, 4);
   assert.ok(urls.every(url => url.origin === 'https://raw.githubusercontent.com'));
 });
 
@@ -75,7 +81,22 @@ test('HEAD is forwarded without a body; user query strings never reach GitHub', 
   assert.equal(forwarded.options.method, 'HEAD');
   assert.equal(forwarded.options.redirect, 'error');
   assert.equal(forwarded.url.searchParams.has('redirect'), false);
-  assert.notEqual(forwarded.url.searchParams.get('refresh'), 'fixed');
+  assert.equal(forwarded.url.search, '');
+});
+
+test('Git branch references select the exact branch and reject malformed data', async () => {
+  const packet = line => (Buffer.byteLength(line) + 4).toString(16).padStart(4, '0') + line;
+  const advertisement = packet('# service=git-upload-pack\n') + '0000' + packet(`${'b'.repeat(40)} HEAD\0multi_ack\n`) + packet(`${defaultCommit} refs/heads/main\n`) + '0000';
+  assert.equal(parseBranchCommit(Buffer.from(advertisement), 'main'), defaultCommit);
+  assert.throws(() => parseBranchCommit(Buffer.from(advertisement), 'missing'), /not found/);
+  assert.throws(() => parseBranchCommit(Buffer.from('zzzz'), 'main'), /Invalid/);
+  assert.throws(() => parseBranchCommit(Buffer.from('0010short'), 'main'), /Truncated/);
+  const result = await resolveBranchCommit('leano07-oss/lyzr.new', 'main', async (url, options) => {
+    assert.equal(url, 'https://github.com/leano07-oss/lyzr.new.git/info/refs?service=git-upload-pack');
+    assert.equal(options.headers['Cache-Control'], 'no-cache');
+    return new Response(advertisement);
+  });
+  assert.equal(result, defaultCommit);
 });
 
 test('upstream outages do not masquerade as missing pages', async () => {

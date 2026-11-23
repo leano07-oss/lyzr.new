@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { extname, resolve } from 'node:path';
 import { Readable } from 'node:stream';
@@ -54,16 +53,53 @@ export function resolveFilePath(requestUrl) {
   return contentTypes.has(extname(file).toLowerCase()) ? file : null;
 }
 
+export function parseBranchCommit(advertisement, branch) {
+  const bytes = Buffer.from(advertisement);
+  let offset = 0;
+  while (offset < bytes.length) {
+    const header = bytes.toString('ascii', offset, offset + 4);
+    if (!/^[0-9a-f]{4}$/i.test(header)) throw new Error('Invalid Git reference advertisement');
+    const size = Number.parseInt(header, 16);
+    offset += 4;
+    if (size <= 3) continue; // Git flush, delimiter, and response-end packets.
+    if (size < 4 || offset + size - 4 > bytes.length) throw new Error('Truncated Git reference advertisement');
+    const line = bytes.toString('utf8', offset, offset + size - 4).split('\0')[0].trimEnd();
+    offset += size - 4;
+    const separator = line.indexOf(' ');
+    const commit = line.slice(0, separator);
+    if (/^[a-f0-9]{40}$/.test(commit) && line.slice(separator + 1) === `refs/heads/${branch}`) {
+      return commit;
+    }
+  }
+  throw new Error('Configured GitHub branch was not found');
+}
+
+export async function resolveBranchCommit(repository, branch, fetchFile = globalThis.fetch) {
+  // The public Git protocol endpoint revalidates branch refs on each request.
+  // It needs no token and does not consume the REST API's anonymous quota.
+  const response = await fetchFile(`https://github.com/${repository}.git/info/refs?service=git-upload-pack`, {
+    headers: { 'Git-Protocol': 'version=1', 'Cache-Control': 'no-cache', 'User-Agent': 'lyzr-new-live-site' },
+    redirect: 'error',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`GitHub references returned HTTP ${response.status}`);
+  }
+  return parseBranchCommit(await response.arrayBuffer(), branch);
+}
+
 export function createRequestHandler({
   repository = process.env.SITE_GITHUB_REPOSITORY || 'leano07-oss/lyzr.new',
   branch = process.env.SITE_GITHUB_BRANCH || 'main',
   fetchFile = globalThis.fetch,
+  getCommit,
   logger = console,
 } = {}) {
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
     throw new Error('SITE_GITHUB_REPOSITORY must be owner/repository');
   }
-  const source = `https://raw.githubusercontent.com/${repository}/refs/heads/${branch.split('/').map(encodeURIComponent).join('/')}/`;
+  const latestCommit = getCommit || (() => resolveBranchCommit(repository, branch, fetchFile));
 
   return async (req, res) => {
     // HTML, assets, and missing pages must all be checked again on refresh.
@@ -83,12 +119,13 @@ export function createRequestHandler({
     const file = resolveFilePath(req.url || '/');
     if (!file) return reply(404, 'Page not found.\n');
 
-    const upstreamUrl = new URL(source + file.split('/').map(encodeURIComponent).join('/'));
-    // A new cache key also avoids GitHub CDN copies of an edited/deleted file
-    // and cached 404s for a file that has just been created.
-    upstreamUrl.searchParams.set('refresh', randomUUID());
-
     try {
+      const commit = await latestCommit();
+      if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('Invalid GitHub commit');
+      res.setHeader('X-Site-Commit', commit);
+      // Files are immutable at a commit SHA. A new commit gets a different
+      // raw-file URL, so a cached branch URL or old 404 can never hide it.
+      const upstreamUrl = new URL(`https://raw.githubusercontent.com/${repository}/${commit}/${file.split('/').map(encodeURIComponent).join('/')}`);
       const headers = {
         'Accept': '*/*',
         'Cache-Control': 'no-cache',
