@@ -2489,7 +2489,7 @@ R.forEach((r,i)=&gt;{const tr=document.createElement(&#x27;tr&#x27;);tr.innerHTM
 
 const reduce=matchMedia(&#x27;(prefers-reduced-motion: reduce)&#x27;).matches;
 const caps=[...document.querySelectorAll(&#x27;.cap&#x27;)], nums=[...document.querySelectorAll(&#x27;#chNums button&#x27;)];
-let stageI=0, playing=!reduce, t0=performance.now(), stageT=performance.now(); const DUR=9000;
+let stageI=0, playing=!reduce, t0=performance.now(), stageT=performance.now(); const DUR=3500;
 function setStage(i){stageI=i;t0=stageT=performance.now();
   caps.forEach((c,k)=&gt;{c.setAttribute(&#x27;aria-selected&#x27;,k===i);c.tabIndex=k===i?0:-1;c.querySelector(&#x27;.bar&#x27;).style.width=&#x27;0&#x27;});
   nums.forEach((b,k)=&gt;b.setAttribute(&#x27;aria-current&#x27;,k===i));
@@ -2512,10 +2512,10 @@ function frame(now){
   else caps.forEach(c=&gt;c.querySelector(&#x27;.bar&#x27;).style.width=&#x27;0&#x27;);
   const on=stageI&gt;=1;
   // order on entering Madison: the tower rises, the boxes restack around it, then the connectors draw along the grid
-  toward(&#x27;tower&#x27;,on?1:0,dt,1.1);
-  toward(&#x27;sort&#x27;,on&amp;&amp;(S.tower&gt;.35||S.sort&gt;0)?1:0,dt,2.0);
-  toward(&#x27;link&#x27;,on&amp;&amp;S.sort&gt;.97?1:0,dt,2.4);
-  toward(&#x27;agent&#x27;,stageI===2&amp;&amp;S.link&gt;.97?1:0,dt,.5);
+  toward(&#x27;tower&#x27;,on?1:0,dt,.5);
+  toward(&#x27;sort&#x27;,on&amp;&amp;(S.tower&gt;.35||S.sort&gt;0)?1:0,dt,1.0);
+  toward(&#x27;link&#x27;,on&amp;&amp;S.sort&gt;.97?1:0,dt,1.1);
+  toward(&#x27;agent&#x27;,stageI===2&amp;&amp;S.link&gt;.97?1:0,dt,.3);
   const tw=eo(S.tower), l=S.link, ag=sm(S.agent);
   // boxes
   const items=[];
@@ -2846,7 +2846,7 @@ setStage(0); requestAnimationFrame(frame);
     }
     else cur.style.transform = 'scaleX(1)';
   };
-  addEventListener('message', e => { if (e.source === film.contentWindow && e.data && typeof e.data.mdStage === 'number') set(e.data.mdStage, e.data.dur || 9000, e.data.playing !== false, e.data.elapsed || 0); });
+  addEventListener('message', e => { if (e.source === film.contentWindow && e.data && typeof e.data.mdStage === 'number') set(e.data.mdStage, e.data.dur || 3500, e.data.playing !== false, e.data.elapsed || 0); });
   const ping = () => film.contentWindow && film.contentWindow.postMessage({ mdPing: 1 }, '*');
   film.addEventListener('load', ping); setTimeout(ping, 300); setTimeout(ping, 1200);
   cols.forEach((c, k) => {
