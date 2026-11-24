@@ -2550,8 +2550,13 @@ const lerp=(a,b,r)=&gt;a+(b-a)*r, cl=x=&gt;x&lt;0?0:x&gt;1?1:x, sm=x=&gt;{x=cl(x
 const S={sort:0,tower:0,link:0,agent:0}; let last=performance.now();
 function toward(k,target,dt,sec){if(reduce){S[k]=target;return}const st=dt/(sec*1000);S[k]=S[k]&lt;target?Math.min(target,S[k]+st):Math.max(target,S[k]-st)}
 function along(r,p){let d=p*r.len;for(let i=1;i&lt;r.poly.length;i++){const a=r.poly[i-1],b=r.poly[i],s=Math.hypot(b[0]-a[0],b[1]-a[1]);if(d&lt;=s)return[lerp(a[0],b[0],d/s),lerp(a[1],b[1],d/s)];d-=s}return r.poly[r.poly.length-1]}
+/* framing per stage: Today keeps its view; With Madison and With agents are centred on their layout */
+const VB=[[60,60,1480,820],[32,234,1560,700],[32,234,1560,700]], svgEl=$(&#x27;svg&#x27;);
+let vbCur=VB[0].slice();
+function vbStep(dt){const tg=VB[stageI],k=reduce?1:Math.min(1,dt/1000*3.2);for(let i=0;i&lt;4;i++)vbCur[i]+=(tg[i]-vbCur[i])*k;svgEl.setAttribute(&#x27;viewBox&#x27;,vbCur.map(v=&gt;v.toFixed(1)).join(&#x27; &#x27;));}
 function frame(now){
   const dt=Math.min(now-last,60); last=now; const t=now/1000;
+  vbStep(dt);
   if(playing&amp;&amp;!reduce){const p=Math.min((now-t0)/DUR,1);caps[stageI].querySelector(&#x27;.bar&#x27;).style.width=(p*100)+&#x27;%&#x27;;if(p&gt;=1)setStage((stageI+1)%3);}
   else caps.forEach(c=&gt;c.querySelector(&#x27;.bar&#x27;).style.width=&#x27;0&#x27;);
   const on=stageI&gt;=1;
